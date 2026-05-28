@@ -45,9 +45,15 @@ export const verifyRegisterController = async (req: Request, res: Response) => {
     }
 
     await supabase.from('pending_users').delete().eq('email', email);
+    
     const token = jwt.sign({ id: newUser.id, email: newUser.email }, process.env.JWT_SECRET || 'secret', { expiresIn: '1d' });
-    res.cookie('session_token', token, { httpOnly: true, secure: false, maxAge: 24 * 60 * 60 * 1000 }); // 1 hari
-    return res.status(200).json({ success: true, message: 'Verifikasi sukses, akun berhasil dibuat dan otomatis masuk.', data: newUser });
+    res.cookie('session_token', token, { httpOnly: true, secure: false, maxAge: 24 * 60 * 60 * 1000 });
+
+    return res.status(200).json({ 
+      success: true, 
+      message: 'Verifikasi sukses, akun berhasil dibuat dan otomatis masuk.', 
+      user: newUser 
+    });
 
   } catch (err) {
     return res.status(500).json({ error: 'Internal Server Error' });
