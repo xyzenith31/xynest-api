@@ -121,3 +121,115 @@ export const verifyLoginController = async (req: Request, res: Response) => {
     return res.status(500).json({ error: err.message || 'Internal Server Error' });
   }
 };
+
+const qrMemorySessions = new Map<string, any>();
+
+export const generateQRTokenController = async (req: Request, res: Response) => {
+  try {
+    const qrToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+    qrMemorySessions.set(qrToken, {
+      status: 'PENDING',
+      expires_at: expiresAt
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'QR Token berhasil dibuat.',
+      qr_token: qrToken,
+      expires_at: expiresAt.toISOString()
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Internal Server Error' });
+  }
+};
+
+export const checkQRStatusController = async (req: Request, res: Response) => {
+  try {
+    const qr_token = req.params.qr_token as string; 
+    const qrData = qrMemorySessions.get(qr_token);
+
+    if (!qrData) {
+      return res.status(404).json({ error: 'QR Token tidak ditemukan atau sudah tidak valid.' });
+    }
+
+    if (new Date() > qrData.expires_at) {
+      qrMemorySessions.delete(qr_token);
+      return res.status(400).json({ error: 'QR Token sudah kedaluwarsa.' });
+    }
+
+    if (qrData.status === 'AUTHORIZED') {
+      const { data: user } = await supabase.from('users').select('*').eq('id', qrData.user_id).single();
+
+      qrMemorySessions.delete(qr_token);
+
+      return res.status(200).json({
+        success: true,
+        status: 'AUTHORIZED',
+        session_token: qrData.session_token,
+        user
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      status: qrData.status 
+    });
+  } catch (err: any) {
+     return res.status(500).json({ error: err.message || 'Internal Server Error' });
+  }
+};
+
+export const authorizeQRLoginController = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const qr_token = req.body.qr_token as string; 
+    const device_model = req.body.device_model as string;
+    const platform = req.body.platform as string;
+    const os_version = req.body.os_version as string;
+
+    if (!qr_token) {
+      return res.status(400).json({ error: 'QR Token wajib disertakan.' });
+    }
+
+    const qrData = qrMemorySessions.get(qr_token);
+
+    if (!qrData) {
+      return res.status(404).json({ error: 'QR Token tidak valid atau tidak ditemukan.' });
+    }
+    if (qrData.status !== 'PENDING') {
+      return res.status(400).json({ error: 'QR Token sudah digunakan.' });
+    }
+    if (new Date() > qrData.expires_at) {
+      qrMemorySessions.delete(qr_token);
+      return res.status(400).json({ error: 'QR Token sudah kedaluwarsa.' });
+    }
+
+    const newSessionToken = crypto.randomBytes(32).toString('hex'); 
+    
+    const { error: deviceError } = await supabase.from('devices').insert({
+      user_id: user.id,
+      session_token: newSessionToken,
+      device_model: device_model || 'XyNest Web / Desktop',
+      platform: platform || 'Web',
+      os_version: os_version || 'Unknown'
+    });
+
+    if (deviceError) throw deviceError;
+
+    qrMemorySessions.set(qr_token, {
+      status: 'AUTHORIZED',
+      user_id: user.id,
+      session_token: newSessionToken,
+      expires_at: qrData.expires_at
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Otorisasi berhasil. Sesi login telah diduplikat untuk web.'
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Internal Server Error' });
+  }
+};
