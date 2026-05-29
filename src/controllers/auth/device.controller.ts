@@ -21,10 +21,19 @@ export const createDeviceSessionHelper = async (userId: string, deviceInfo: any)
 export const getActiveDevices = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
+    const authHeader = req.headers.authorization;
+    const currentToken = authHeader ? authHeader.split(' ')[1] : null;
+
     const { data, error } = await supabase.from('devices').select('*').eq('user_id', user.id);
 
     if (error) throw error;
-    return res.status(200).json({ success: true, data });
+
+    const devicesWithFlag = data.map((device) => ({
+      ...device,
+      is_current_device: device.session_token === currentToken,
+    }));
+
+    return res.status(200).json({ success: true, data: devicesWithFlag });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
@@ -35,10 +44,18 @@ export const revokeDeviceSession = async (req: Request, res: Response) => {
     const user = (req as any).user;
     const { deviceId } = req.params;
 
-    const { error } = await supabase.from('devices').delete().match({ id: deviceId, user_id: user.id });
+    const { error, count } = await supabase
+      .from('devices')
+      .delete({ count: 'exact' })
+      .match({ id: deviceId, user_id: user.id });
 
     if (error) throw error;
-    return res.status(200).json({ success: true, message: 'Sesi perangkat berhasil dihentikan/dihapus dari Supabase.' });
+
+    if (count === 0) {
+      return res.status(404).json({ success: false, error: 'Perangkat tidak ditemukan atau sudah dikeluarkan.' });
+    }
+
+    return res.status(200).json({ success: true, message: 'Sesi perangkat berhasil dihentikan dari Supabase.' });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }

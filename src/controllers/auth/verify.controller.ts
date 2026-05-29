@@ -24,7 +24,7 @@ export const verifyRegisterController = async (req: Request, res: Response) => {
     }
 
     if (new Date() > new Date(pending.expired_at)) {
-      return res.status(400).json({ error: 'Kode OTP sudah kedaluwarsa (lebih dari 5 menit).' });
+      return res.status(400).json({ error: 'Kode OTP sudah kedaluwarsa (lebih dari 30 menit).' });
     }
 
     const { data: newUser, error: insertError } = await supabase
@@ -70,26 +70,36 @@ export const verifyRegisterController = async (req: Request, res: Response) => {
 
 export const resendOtpController = async (req: Request, res: Response) => {
   try {
-    const { email } = req.body;
+    const { email: identifier } = req.body; 
 
-    if (!email) {
-      return res.status(400).json({ error: 'Email wajib diisi.' });
+    if (!identifier) {
+      return res.status(400).json({ error: 'Identitas (Email/Username/Telepon) wajib diisi.' });
     }
 
     const newOtp = generateOTP();
-    const newExpired = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-    const { data: pending } = await supabase.from('pending_users').select('*').eq('email', email).maybeSingle();
+    const newExpired = new Date(Date.now() + 30 * 60 * 1000).toISOString(); 
+
+    const { data: pending } = await supabase
+      .from('pending_users')
+      .select('*')
+      .or(`email.eq.${identifier},username.eq.${identifier},phone_number.eq.${identifier}`)
+      .maybeSingle();
 
     if (pending && pending.username !== 'LOGIN_SESSION') {
-      await supabase.from('pending_users').update({ otp_code: newOtp, expired_at: newExpired }).eq('email', email);
+      await supabase.from('pending_users').update({ otp_code: newOtp, expired_at: newExpired }).eq('id', pending.id);
       
       const emailHtml = getRegisterMailTemplate(pending.full_name, newOtp);
-      await sendOTPEmail(email, 'Kirim Ulang Verifikasi Akun - XyNest Project', emailHtml);
+      await sendOTPEmail(pending.email, 'Kirim Ulang Verifikasi Akun - XyNest Project', emailHtml);
       
-      return res.status(200).json({ success: true, message: 'Kode OTP baru berhasil dikirim ulang.' });
+      return res.status(200).json({ success: true, message: 'Kode OTP baru berhasil dikirim ulang ke email Anda.' });
     }
 
-    const { data: user } = await supabase.from('users').select('email').eq('email', email).maybeSingle();
+    const { data: user } = await supabase
+      .from('users')
+      .select('*')
+      .or(`email.eq.${identifier},username.eq.${identifier},phone_number.eq.${identifier}`)
+      .maybeSingle();
+
     if (user) {
       await supabase.from('pending_users').upsert({
         email: user.email,
@@ -102,13 +112,11 @@ export const resendOtpController = async (req: Request, res: Response) => {
       }, { onConflict: 'email' });
 
       const emailHtml = getLoginMailTemplate(newOtp);
-      await sendOTPEmail(email, 'Kirim Ulang Otentikasi Sesi Masuk - XyNest Project', emailHtml);
-      
+      await sendOTPEmail(user.email, 'Kirim Ulang Otentikasi Sesi Masuk - XyNest Project', emailHtml);
       return res.status(200).json({ success: true, message: 'Kode OTP baru untuk login berhasil dikirim ulang.' });
     }
 
-    return res.status(404).json({ error: 'Email tidak ditemukan di sistem.' });
-
+    return res.status(404).json({ error: 'Akun tidak ditemukan di sistem.' });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Internal Server Error' });
   }

@@ -23,7 +23,7 @@ export const registerController = async (req: Request, res: Response) => {
     const phoneRegex = /^\+(62|84|66|65|86|81)[1-9][0-9]{7,12}$/;
     if (!phoneRegex.test(phone_number)) {
       return res.status(400).json({ 
-        error: 'Format nomor ponsel salah! Harus menggunakan kode negara internasional (+62, +84, +66, +65, +86, +81), dan angka setelah kode negara tidak boleh diawali dengan angka 0.' 
+        error: 'Format nomor ponsel salah! Harus menggunakan kode negara internasional (+62, dll), dan angka setelah kode negara tidak boleh diawali dengan angka 0.' 
       });
     }
 
@@ -58,7 +58,7 @@ export const registerController = async (req: Request, res: Response) => {
     }
 
     const otpCode = generateOTP();
-    const expiredAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const expiredAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
     const { error: upsertError } = await supabase
       .from('pending_users')
@@ -82,7 +82,7 @@ export const registerController = async (req: Request, res: Response) => {
 
     return res.status(200).json({ 
       success: true, 
-      message: 'Kode verifikasi OTP berhasil dikirim ke email. Silakan cek kotak masuk Anda dalam 5 menit.' 
+      message: 'Kode verifikasi OTP berhasil dikirim ke email. Silakan cek kotak masuk Anda dalam 30 menit.' 
     });
 
   } catch (err) {
