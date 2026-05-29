@@ -2,16 +2,18 @@ import { Request, Response } from 'express';
 import { supabase } from '../../config/supabase';
 import crypto from 'crypto';
 
-export const createDeviceSessionHelper = async (userId: string, deviceInfo: any) => {
+export const createDeviceSessionHelper = async (user: any, deviceInfo: any) => {
   const sessionToken = crypto.randomBytes(32).toString('hex');
   const { device_model, platform, os_version } = deviceInfo;
 
   const { data, error } = await supabase.from('devices').insert({
-    user_id: userId,
+    user_id: user.id,
     session_token: sessionToken,
     device_model: device_model || 'Unknown Device',
     platform: platform || 'Unknown Platform',
     os_version: os_version || 'Unknown OS',
+    email: user.email,
+    username: user.username
   }).select().single();
 
   if (error) throw new Error(error.message);
@@ -88,7 +90,7 @@ export const authorizeQRLoginController = async (req: Request, res: Response) =>
       return res.status(400).json({ error: 'QR Token sudah kedaluwarsa.' });
     }
 
-    const sessionToken = await createDeviceSessionHelper(user.id, {
+    const sessionToken = await createDeviceSessionHelper(user, { 
       device_model: device_model || 'Desktop Login via QR',
       platform: platform || 'Desktop/Web',
       os_version: os_version || 'Unknown'

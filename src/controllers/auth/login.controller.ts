@@ -105,7 +105,9 @@ export const verifyLoginController = async (req: Request, res: Response) => {
       session_token: sessionToken,
       device_model: device_model || 'Unknown Device',
       platform: platform || 'Unknown Platform',
-      os_version: os_version || 'Unknown OS'
+      os_version: os_version || 'Unknown OS',
+      email: user.email,
+      username: user.username
     });
 
     if (deviceError) throw deviceError;
@@ -213,7 +215,9 @@ export const authorizeQRLoginController = async (req: Request, res: Response) =>
       session_token: newSessionToken,
       device_model: device_model || 'XyNest Web / Desktop',
       platform: platform || 'Web',
-      os_version: os_version || 'Unknown'
+      os_version: os_version || 'Unknown',
+      email: user.email,
+      username: user.username
     });
 
     if (deviceError) throw deviceError;
