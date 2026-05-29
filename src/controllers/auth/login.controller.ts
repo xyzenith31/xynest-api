@@ -31,9 +31,7 @@ export const requestLoginController = async (req: Request, res: Response) => {
       if (!data) errorMsg = 'Nomor ponsel tidak ditemukan di sistem kami.';
       user = data;
     } else {
-      const { data, error } = await supabase.from('users').select('*').eq('username', identifier).maybeSingle();
-      if (error) throw error;
-      if (!data) errorMsg = 'Username tidak ditemukan. Pastikan diawali dengan karakter yang benar.';
+      const { data } = await supabase.from('users').select('*').eq('username', identifier).maybeSingle();
       user = data;
     }
 
@@ -41,26 +39,28 @@ export const requestLoginController = async (req: Request, res: Response) => {
       return res.status(404).json({ error: errorMsg });
     }
 
-    const otp = generateOTP();
-    const expiredAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const otpCode = generateOTP();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
-    await supabase.from('pending_users').upsert({
+    const { error: upsertError } = await supabase.from('pending_users').upsert({
       email: user.email,
-      username: 'LOGIN_SESSION',
+      username: 'LOGIN_SESSION', 
       full_name: 'LOGIN_SESSION',
       gender: 'LOGIN_SESSION',
       birth_date: '2000-01-01',
-      phone_number: user.phone_number || '',
-      otp_code: otp,
-      expired_at: expiredAt
+      otp_code: otpCode,
+      expired_at: expiresAt, 
     }, { onConflict: 'email' });
 
-    const emailHtml = getLoginMailTemplate(otp);
-    await sendOTPEmail(user.email, 'Otentikasi Sesi Masuk - XyNest Project', emailHtml);
+    if (upsertError) throw upsertError;
 
-    return res.status(200).json({ 
-      success: true, 
-      message: 'Kode OTP login berhasil dikirim ke email Anda.' 
+    const emailHtml = getLoginMailTemplate(otpCode);
+    await sendOTPEmail(user.email, 'Kode Akses Masuk XyNest', emailHtml);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Kode OTP telah dikirim ke email Anda.',
+      email: user.email 
     });
 
   } catch (err: any) {
@@ -73,7 +73,7 @@ export const verifyLoginController = async (req: Request, res: Response) => {
     const { identifier, otp_code, device_model, platform, os_version } = req.body;
 
     if (!identifier || !otp_code) {
-      return res.status(400).json({ error: 'Identifier dan kode OTP wajib diisi.' });
+        return res.status(400).json({ error: 'Data login atau kode OTP tidak lengkap.' });
     }
 
     let user = null;
@@ -83,23 +83,35 @@ export const verifyLoginController = async (req: Request, res: Response) => {
     } else if (identifier.startsWith('@')) {
       const { data } = await supabase.from('users').select('*').eq('username', identifier).maybeSingle();
       user = data;
-    } else {
+    } else if (identifier.startsWith('+')) {
       const { data } = await supabase.from('users').select('*').eq('phone_number', identifier).maybeSingle();
+      user = data;
+    } else {
+      const { data } = await supabase.from('users').select('*').eq('username', identifier).maybeSingle();
       user = data;
     }
 
-    if (!user) return res.status(404).json({ error: 'User tidak ditemukan.' });
+    if (!user) {
+      return res.status(404).json({ error: 'Akun pengguna tidak ditemukan.' });
+    }
 
-    const { data: pending } = await supabase.from('pending_users').select('*').eq('email', user.email).single();
+    const { data: otpRecord, error: otpError } = await supabase
+      .from('pending_users')
+      .select('*')
+      .eq('email', user.email)
+      .single();
 
-    if (!pending) return res.status(400).json({ error: 'Sesi login kedaluwarsa atau tidak ditemukan.' });
-    if (pending.otp_code !== otp_code.toUpperCase()) return res.status(400).json({ error: 'Kode OTP salah.' });
-    if (new Date() > new Date(pending.expired_at)) return res.status(400).json({ error: 'Kode OTP kedaluwarsa.' });
+    if (otpError || !otpRecord || otpRecord.otp_code !== otp_code) {
+      return res.status(400).json({ error: 'Kode OTP tidak valid atau salah.' });
+    }
+
+    if (new Date() > new Date(otpRecord.expired_at)) {
+      return res.status(400).json({ error: 'Kode OTP sudah kedaluwarsa. Silakan minta ulang.' });
+    }
 
     await supabase.from('pending_users').delete().eq('email', user.email);
 
     const sessionToken = crypto.randomBytes(32).toString('hex');
-
     const { error: deviceError } = await supabase.from('devices').insert({
       user_id: user.id,
       session_token: sessionToken,
@@ -112,11 +124,11 @@ export const verifyLoginController = async (req: Request, res: Response) => {
 
     if (deviceError) throw deviceError;
 
-    return res.status(200).json({ 
-      success: true, 
-      message: 'Login Sukses! Sesi perangkat berhasil disimpan.', 
-      session_token: sessionToken, 
-      user 
+    return res.status(200).json({
+      success: true,
+      message: 'Login berhasil.',
+      session_token: sessionToken,
+      user
     });
 
   } catch (err: any) {
@@ -124,23 +136,26 @@ export const verifyLoginController = async (req: Request, res: Response) => {
   }
 };
 
-const qrMemorySessions = new Map<string, any>();
-
 export const generateQRTokenController = async (req: Request, res: Response) => {
   try {
+    const now = new Date();
+    await supabase.from('pending_qrcodes').delete().lt('expires_at', now.toISOString());
     const qrToken = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    const expiresAt = new Date(now.getTime() + 10 * 60 * 1000).toISOString(); 
 
-    qrMemorySessions.set(qrToken, {
+    const { error } = await supabase.from('pending_qrcodes').insert({
+      qr_token: qrToken,
       status: 'PENDING',
       expires_at: expiresAt
     });
+
+    if (error) throw error;
 
     return res.status(200).json({
       success: true,
       message: 'QR Token berhasil dibuat.',
       qr_token: qrToken,
-      expires_at: expiresAt.toISOString()
+      expires_at: expiresAt
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Internal Server Error' });
@@ -150,90 +165,23 @@ export const generateQRTokenController = async (req: Request, res: Response) => 
 export const checkQRStatusController = async (req: Request, res: Response) => {
   try {
     const qr_token = req.params.qr_token as string; 
-    const qrData = qrMemorySessions.get(qr_token);
+    const { data: qrData, error } = await supabase.from('pending_qrcodes').select('*').eq('qr_token', qr_token).single();
 
-    if (!qrData) {
-      return res.status(404).json({ error: 'QR Token tidak ditemukan atau sudah tidak valid.' });
-    }
-
-    if (new Date() > qrData.expires_at) {
-      qrMemorySessions.delete(qr_token);
+    if (error || !qrData) return res.status(404).json({ error: 'QR Token tidak ditemukan atau sudah tidak valid.' });
+    if (new Date() > new Date(qrData.expires_at)) {
+      await supabase.from('pending_qrcodes').delete().eq('qr_token', qr_token);
       return res.status(400).json({ error: 'QR Token sudah kedaluwarsa.' });
     }
 
     if (qrData.status === 'AUTHORIZED') {
       const { data: user } = await supabase.from('users').select('*').eq('id', qrData.user_id).single();
+      const { data: device } = await supabase.from('devices').select('*').eq('session_token', qrData.session_token).single();
+      await supabase.from('pending_qrcodes').delete().eq('qr_token', qr_token);
 
-      qrMemorySessions.delete(qr_token);
-
-      return res.status(200).json({
-        success: true,
-        status: 'AUTHORIZED',
-        session_token: qrData.session_token,
-        user
-      });
+      return res.status(200).json({ success: true, status: 'AUTHORIZED', session_token: qrData.session_token, device, user });
     }
-
-    return res.status(200).json({
-      success: true,
-      status: qrData.status 
-    });
+    return res.status(200).json({ success: true, status: qrData.status });
   } catch (err: any) {
      return res.status(500).json({ error: err.message || 'Internal Server Error' });
-  }
-};
-
-export const authorizeQRLoginController = async (req: Request, res: Response) => {
-  try {
-    const user = (req as any).user;
-    const qr_token = req.body.qr_token as string; 
-    const device_model = req.body.device_model as string;
-    const platform = req.body.platform as string;
-    const os_version = req.body.os_version as string;
-
-    if (!qr_token) {
-      return res.status(400).json({ error: 'QR Token wajib disertakan.' });
-    }
-
-    const qrData = qrMemorySessions.get(qr_token);
-
-    if (!qrData) {
-      return res.status(404).json({ error: 'QR Token tidak valid atau tidak ditemukan.' });
-    }
-    if (qrData.status !== 'PENDING') {
-      return res.status(400).json({ error: 'QR Token sudah digunakan.' });
-    }
-    if (new Date() > qrData.expires_at) {
-      qrMemorySessions.delete(qr_token);
-      return res.status(400).json({ error: 'QR Token sudah kedaluwarsa.' });
-    }
-
-    const newSessionToken = crypto.randomBytes(32).toString('hex'); 
-    
-    const { error: deviceError } = await supabase.from('devices').insert({
-      user_id: user.id,
-      session_token: newSessionToken,
-      device_model: device_model || 'XyNest Web / Desktop',
-      platform: platform || 'Web',
-      os_version: os_version || 'Unknown',
-      email: user.email,
-      username: user.username
-    });
-
-    if (deviceError) throw deviceError;
-
-    qrMemorySessions.set(qr_token, {
-      status: 'AUTHORIZED',
-      user_id: user.id,
-      session_token: newSessionToken,
-      expires_at: qrData.expires_at
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: 'Otorisasi berhasil. Sesi login telah diduplikat untuk web.'
-    });
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message || 'Internal Server Error' });
   }
 };

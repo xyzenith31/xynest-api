@@ -2,7 +2,18 @@ import { Request, Response } from 'express';
 import { supabase } from '../../config/supabase';
 import crypto from 'crypto';
 
-export const createDeviceSessionHelper = async (user: any, deviceInfo: any) => {
+interface DeviceSessionData {
+  id: string;
+  session_token: string;
+  user_id: string;
+  device_model: string;
+  platform: string;
+  os_version: string;
+  email: string;
+  username: string;
+}
+
+export const createDeviceSessionHelper = async (user: any, deviceInfo: any): Promise<DeviceSessionData> => {
   const sessionToken = crypto.randomBytes(32).toString('hex');
   const { device_model, platform, os_version } = deviceInfo;
 
@@ -10,14 +21,15 @@ export const createDeviceSessionHelper = async (user: any, deviceInfo: any) => {
     user_id: user.id,
     session_token: sessionToken,
     device_model: device_model || 'Unknown Device',
-    platform: platform || 'Unknown Platform',
+    platform: platform || 'Website',
     os_version: os_version || 'Unknown OS',
     email: user.email,
     username: user.username
   }).select().single();
 
   if (error) throw new Error(error.message);
-  return sessionToken;
+  
+  return data as DeviceSessionData; 
 };
 
 export const getActiveDevices = async (req: Request, res: Response) => {
@@ -37,29 +49,22 @@ export const getActiveDevices = async (req: Request, res: Response) => {
 
     return res.status(200).json({ success: true, data: devicesWithFlag });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message || 'Internal Server Error' });
   }
 };
 
 export const revokeDeviceSession = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
     const { deviceId } = req.params;
+    const user = (req as any).user;
 
-    const { error, count } = await supabase
-      .from('devices')
-      .delete({ count: 'exact' })
-      .match({ id: deviceId, user_id: user.id });
+    const { error } = await supabase.from('devices').delete().eq('id', deviceId).eq('user_id', user.id);
 
     if (error) throw error;
 
-    if (count === 0) {
-      return res.status(404).json({ success: false, error: 'Perangkat tidak ditemukan atau sudah dikeluarkan.' });
-    }
-
-    return res.status(200).json({ success: true, message: 'Sesi perangkat berhasil dihentikan dari Supabase.' });
+    return res.status(200).json({ success: true, message: 'Sesi perangkat berhasil dicabut.' });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message || 'Internal Server Error' });
   }
 };
 
@@ -73,9 +78,9 @@ export const authorizeQRLoginController = async (req: Request, res: Response) =>
     }
 
     const { data: qrData, error: qrError } = await supabase
-      .from('qr_sessions')
+      .from('pending_qrcodes')
       .select('*')
-      .eq('token', qr_token)
+      .eq('qr_token', qr_token)
       .single();
 
     if (qrError || !qrData) {
@@ -90,28 +95,72 @@ export const authorizeQRLoginController = async (req: Request, res: Response) =>
       return res.status(400).json({ error: 'QR Token sudah kedaluwarsa.' });
     }
 
-    const sessionToken = await createDeviceSessionHelper(user, { 
+    const newDeviceSession = await createDeviceSessionHelper(user, { 
       device_model: device_model || 'Desktop Login via QR',
-      platform: platform || 'Desktop/Web',
+      platform: platform || 'Website',
       os_version: os_version || 'Unknown'
     });
 
     const { error: updateError } = await supabase
-      .from('qr_sessions')
+      .from('pending_qrcodes')
       .update({
         status: 'AUTHORIZED',
         user_id: user.id,
-        session_token: sessionToken
+        session_token: newDeviceSession.session_token
       })
-      .eq('token', qr_token);
+      .eq('qr_token', qr_token);
 
     if (updateError) throw updateError;
 
     return res.status(200).json({
       success: true,
-      message: 'Otorisasi berhasil. Perangkat desktop sekarang sudah terhubung.'
+      message: 'Otorisasi berhasil. Perangkat desktop sekarang sudah terhubung.',
+      device_id: newDeviceSession.id 
     });
 
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Internal Server Error' });
+  }
+};
+
+export const generateQRTokenController = async (req: Request, res: Response) => {
+  try {
+    const qrToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); 
+
+    const { error } = await supabase.from('pending_qrcodes').insert({
+      qr_token: qrToken,
+      status: 'PENDING',
+      expires_at: expiresAt.toISOString(),
+    });
+
+    if (error) throw error;
+
+    return res.status(200).json({ success: true, qr_token: qrToken });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Internal Server Error' });
+  }
+};
+
+export const checkQRStatusController = async (req: Request, res: Response) => {
+  try {
+    const { qrToken } = req.params;
+    
+    const { data, error } = await supabase
+      .from('pending_qrcodes')
+      .select('*')
+      .eq('qr_token', qrToken)
+      .single();
+
+    if (error || !data) {
+      return res.status(404).json({ error: 'QR Token tidak ditemukan.' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      status: data.status,
+      session_token: data.session_token
+    });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Internal Server Error' });
   }
