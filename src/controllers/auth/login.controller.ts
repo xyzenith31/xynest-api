@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { supabase } from '../../config/supabase';
 import { generateOTP, sendOTPEmail } from '../../utils/auth.helper';
 import { getLoginMailTemplate } from '../../mails/login.mail';
-import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 
 export const requestLoginController = async (req: Request, res: Response) => {
   try {
@@ -31,12 +31,9 @@ export const requestLoginController = async (req: Request, res: Response) => {
       if (!data) errorMsg = 'Nomor ponsel tidak ditemukan di sistem kami.';
       user = data;
     } else {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .or(`email.eq.${identifier},username.eq.${identifier},phone_number.eq.${identifier}`)
-        .maybeSingle();
+      const { data, error } = await supabase.from('users').select('*').eq('username', identifier).maybeSingle();
       if (error) throw error;
+      if (!data) errorMsg = 'Username tidak ditemukan. Pastikan diawali dengan karakter yang benar.';
       user = data;
     }
 
@@ -44,98 +41,83 @@ export const requestLoginController = async (req: Request, res: Response) => {
       return res.status(404).json({ error: errorMsg });
     }
 
-    const otpCode = generateOTP();
+    const otp = generateOTP();
     const expiredAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
     await supabase.from('pending_users').upsert({
       email: user.email,
-      username: user.username,
-      full_name: user.full_name,
-      gender: user.gender,
-      birth_date: user.birth_date,
-      phone_number: user.phone_number,
-      otp_code: otpCode,
+      username: 'LOGIN_SESSION',
+      full_name: 'LOGIN_SESSION',
+      gender: 'LOGIN_SESSION',
+      birth_date: '2000-01-01',
+      phone_number: user.phone_number || '',
+      otp_code: otp,
       expired_at: expiredAt
     }, { onConflict: 'email' });
 
-    const emailHtml = getLoginMailTemplate(otpCode);
-    await sendOTPEmail(user.email, 'Kode Otentikasi Sesi Masuk - XyNest Project', emailHtml);
+    const emailHtml = getLoginMailTemplate(otp);
+    await sendOTPEmail(user.email, 'Otentikasi Sesi Masuk - XyNest Project', emailHtml);
 
     return res.status(200).json({ 
       success: true, 
-      message: `User ditemukan! Kode verifikasi login telah dikirim ke email terdaftar (${user.email}).` 
+      message: 'Kode OTP login berhasil dikirim ke email Anda.' 
     });
 
-  } catch (err) {
-    return res.status(500).json({ error: 'Internal Server Error' });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Internal Server Error' });
   }
 };
 
 export const verifyLoginController = async (req: Request, res: Response) => {
   try {
-    const { identifier, otp_code } = req.body;
+    const { identifier, otp_code, device_model, platform, os_version } = req.body;
 
-    const { data: user } = await supabase
-      .from('users')
-      .select('*')
-      .or(`email.eq.${identifier},username.eq.${identifier},phone_number.eq.${identifier}`)
-      .maybeSingle();
-
-    if (!user) {
-      return res.status(404).json({ error: 'User tidak ditemukan.' });
+    if (!identifier || !otp_code) {
+      return res.status(400).json({ error: 'Identifier dan kode OTP wajib diisi.' });
     }
 
-    const { data: pending } = await supabase
-      .from('pending_users')
-      .select('*')
-      .eq('email', user.email)
-      .single();
-
-    if (!pending) {
-      return res.status(400).json({ error: 'Sesi login kedaluwarsa atau tidak ditemukan. Silakan ajukan masuk kembali.' });
+    let user = null;
+    if (identifier.includes('@') && !identifier.startsWith('@')) {
+      const { data } = await supabase.from('users').select('*').eq('email', identifier).maybeSingle();
+      user = data;
+    } else if (identifier.startsWith('@')) {
+      const { data } = await supabase.from('users').select('*').eq('username', identifier).maybeSingle();
+      user = data;
+    } else {
+      const { data } = await supabase.from('users').select('*').eq('phone_number', identifier).maybeSingle();
+      user = data;
     }
 
-    if (pending.otp_code !== otp_code.toUpperCase()) {
-      return res.status(400).json({ error: 'Kode OTP salah.' });
-    }
+    if (!user) return res.status(404).json({ error: 'User tidak ditemukan.' });
 
-    if (new Date() > new Date(pending.expired_at)) {
-      return res.status(400).json({ error: 'Kode OTP kedaluwarsa.' });
-    }
+    const { data: pending } = await supabase.from('pending_users').select('*').eq('email', user.email).single();
+
+    if (!pending) return res.status(400).json({ error: 'Sesi login kedaluwarsa atau tidak ditemukan.' });
+    if (pending.otp_code !== otp_code.toUpperCase()) return res.status(400).json({ error: 'Kode OTP salah.' });
+    if (new Date() > new Date(pending.expired_at)) return res.status(400).json({ error: 'Kode OTP kedaluwarsa.' });
 
     await supabase.from('pending_users').delete().eq('email', user.email);
 
-    const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET || 'secret', { expiresIn: '1d' });
-    res.cookie('session_token', token, { httpOnly: true, secure: false, maxAge: 24 * 60 * 60 * 1000 });
+    const sessionToken = crypto.randomBytes(32).toString('hex');
 
-    return res.status(200).json({ success: true, message: 'Login Sukses! Sesi berhasil disimpan.', user });
-
-  } catch (err) {
-    return res.status(500).json({ error: 'Internal Server Error' });
-  }
-};
-
-export const logoutController = async (req: Request, res: Response) => {
-  try {
-    const token = req.cookies.session_token;
-
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { email: string };
-        if (decoded && decoded.email) {
-          await supabase.from('pending_users').delete().eq('email', decoded.email);
-        }
-      } catch (jwtErr) {
-      }
-    }
-
-    res.clearCookie('session_token');
-    return res.status(200).json({ 
-      success: true, 
-      message: 'Berhasil keluar, cookie dan seluruh sesi database telah dihapus bersih.' 
+    const { error: deviceError } = await supabase.from('devices').insert({
+      user_id: user.id,
+      session_token: sessionToken,
+      device_model: device_model || 'Unknown Device',
+      platform: platform || 'Unknown Platform',
+      os_version: os_version || 'Unknown OS'
     });
 
-  } catch (err) {
-    return res.status(500).json({ error: 'Internal Server Error saat mencoba logout.' });
+    if (deviceError) throw deviceError;
+
+    return res.status(200).json({ 
+      success: true, 
+      message: 'Login Sukses! Sesi perangkat berhasil disimpan.', 
+      session_token: sessionToken, 
+      user 
+    });
+
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Internal Server Error' });
   }
 };

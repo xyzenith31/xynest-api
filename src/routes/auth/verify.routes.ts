@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import { verifyRegisterController, resendOTPController } from '../../controllers/auth/verify.controller';
+import { verifyRegisterController, resendOtpController } from '../../controllers/auth/verify.controller';
 
 const router = Router();
 
 router.post('/verify-register', verifyRegisterController);
-router.post('/resend-otp', resendOTPController);
+router.post('/resend-otp', resendOtpController);
 
 export default router;

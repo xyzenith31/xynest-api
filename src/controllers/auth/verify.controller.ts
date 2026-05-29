@@ -3,11 +3,11 @@ import { supabase } from '../../config/supabase';
 import { sendOTPEmail, generateOTP } from '../../utils/auth.helper';
 import { getRegisterMailTemplate } from '../../mails/register.mail';
 import { getLoginMailTemplate } from '../../mails/login.mail';
-import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 
 export const verifyRegisterController = async (req: Request, res: Response) => {
   try {
-    const { email, otp_code } = req.body;
+    const { email, otp_code, device_model, platform, os_version } = req.body;
 
     const { data: pending, error } = await supabase
       .from('pending_users')
@@ -40,29 +40,42 @@ export const verifyRegisterController = async (req: Request, res: Response) => {
       .select()
       .single();
 
-    if (insertError) {
-      return res.status(400).json({ error: insertError.message });
-    }
+    if (insertError) throw insertError;
 
     await supabase.from('pending_users').delete().eq('email', email);
-    
-    const token = jwt.sign({ id: newUser.id, email: newUser.email }, process.env.JWT_SECRET || 'secret', { expiresIn: '1d' });
-    res.cookie('session_token', token, { httpOnly: true, secure: false, maxAge: 24 * 60 * 60 * 1000 });
+
+    const sessionToken = crypto.randomBytes(32).toString('hex');
+
+    const { error: deviceError } = await supabase.from('devices').insert({
+      user_id: newUser.id,
+      session_token: sessionToken,
+      device_model: device_model || 'Unknown Device',
+      platform: platform || 'Unknown Platform',
+      os_version: os_version || 'Unknown OS'
+    });
+
+    if (deviceError) throw deviceError;
 
     return res.status(200).json({ 
       success: true, 
-      message: 'Verifikasi sukses, akun berhasil dibuat dan otomatis masuk.', 
+      message: 'Registrasi Berhasil! Sesi Anda telah dibuat secara otomatis.', 
+      session_token: sessionToken,
       user: newUser 
     });
 
-  } catch (err) {
-    return res.status(500).json({ error: 'Internal Server Error' });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Internal Server Error' });
   }
 };
 
-export const resendOTPController = async (req: Request, res: Response) => {
+export const resendOtpController = async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email wajib diisi.' });
+    }
+
     const newOtp = generateOTP();
     const newExpired = new Date(Date.now() + 5 * 60 * 1000).toISOString();
     const { data: pending } = await supabase.from('pending_users').select('*').eq('email', email).maybeSingle();
@@ -91,12 +104,12 @@ export const resendOTPController = async (req: Request, res: Response) => {
       const emailHtml = getLoginMailTemplate(newOtp);
       await sendOTPEmail(email, 'Kirim Ulang Otentikasi Sesi Masuk - XyNest Project', emailHtml);
       
-      return res.status(200).json({ success: true, message: 'Kode OTP baru berhasil dikirim ulang untuk login.' });
+      return res.status(200).json({ success: true, message: 'Kode OTP baru untuk login berhasil dikirim ulang.' });
     }
 
-    return res.status(400).json({ error: 'Email tidak ditemukan di sistem.' });
+    return res.status(404).json({ error: 'Email tidak ditemukan di sistem.' });
 
-  } catch (err) {
-    return res.status(500).json({ error: 'Internal Server Error' });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Internal Server Error' });
   }
 };
