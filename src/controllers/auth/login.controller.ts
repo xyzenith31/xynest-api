@@ -20,19 +20,30 @@ export const requestLoginController = async (req: Request, res: Response) => {
       if (error) throw error;
       if (!data) errorMsg = 'Email tidak ditemukan di sistem kami. Silakan daftar terlebih dahulu.';
       user = data;
+
     } else if (identifier.startsWith('@')) {
       const { data, error } = await supabase.from('users').select('*').eq('username', identifier).maybeSingle();
       if (error) throw error;
       if (!data) errorMsg = 'Username tidak ditemukan di sistem kami. Periksa kembali penulisan Anda.';
       user = data;
+
     } else if (identifier.startsWith('+')) {
       const { data, error } = await supabase.from('users').select('*').eq('phone_number', identifier).maybeSingle();
       if (error) throw error;
       if (!data) errorMsg = 'Nomor ponsel tidak ditemukan di sistem kami.';
       user = data;
+
     } else {
-      const { data } = await supabase.from('users').select('*').eq('username', identifier).maybeSingle();
-      user = data;
+      const isNumeric = /^\d+$/.test(identifier); 
+      if (isNumeric) {
+        const { data } = await supabase.from('users').select('*').eq('phone_number', `+${identifier}`).maybeSingle();
+        if (!data) errorMsg = 'Nomor ponsel tidak ditemukan di sistem kami.';
+        user = data;
+      } else {
+        const { data } = await supabase.from('users').select('*').or(`username.eq.${identifier},username.eq.@${identifier}`).maybeSingle();
+        if (!data) errorMsg = 'Username tidak ditemukan di sistem kami. Periksa kembali penulisan Anda.';
+        user = data;
+      }
     }
 
     if (!user) {

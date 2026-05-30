@@ -54,7 +54,17 @@ export const registerController = async (req: Request, res: Response) => {
       .limit(1);
 
     if (existingUser && existingUser.length > 0) {
-      return res.status(400).json({ error: 'Email, Username, atau Nomor Ponsel sudah terdaftar.' });
+      const conflict = existingUser[0];
+      if (conflict.email === email) {
+        return res.status(400).json({ error: 'Email sudah terdaftar.' });
+      }
+      if (conflict.username === username) {
+        return res.status(400).json({ error: 'Username sudah terdaftar.' });
+      }
+      if (conflict.phone_number === phone_number) {
+        return res.status(400).json({ error: 'Nomor ponsel sudah terdaftar.' });
+      }
+      return res.status(400).json({ error: 'Data sudah terdaftar di sistem.' });
     }
 
     const otpCode = generateOTP();

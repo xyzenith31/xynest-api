@@ -51,7 +51,9 @@ export const verifyRegisterController = async (req: Request, res: Response) => {
       session_token: sessionToken,
       device_model: device_model || 'Unknown Device',
       platform: platform || 'Unknown Platform',
-      os_version: os_version || 'Unknown OS'
+      os_version: os_version || 'Unknown OS',
+      email: newUser.email,
+      username: newUser.username
     });
 
     if (deviceError) throw deviceError;
