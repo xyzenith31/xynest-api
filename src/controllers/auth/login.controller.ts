@@ -89,12 +89,45 @@ export const verifyLoginController = async (req: Request, res: Response) => {
 
     const ua = req.headers['user-agent'] || '';
     let finalPlatform = platform;
-    
-    if (!finalPlatform || finalPlatform === 'Unknown Platform') {
-       if (ua.includes('okhttp') || ua.includes('Dalvik') || ua.includes('Android')) finalPlatform = 'Android';
-       else if (ua.includes('CFNetwork') || ua.includes('iPhone') || ua.includes('Darwin')) finalPlatform = 'iOS';
-       else if (ua.includes('Mozilla') || ua.includes('Chrome') || ua.includes('Safari')) finalPlatform = 'Website';
-       else finalPlatform = 'Unknown Platform';
+    let finalDeviceModel = device_model;
+    let finalOsVersion = os_version;
+
+    if (!finalPlatform || finalPlatform === 'Unknown Platform' || finalPlatform === 'Browser') {
+       if (ua.includes('Android') || ua.includes('okhttp') || ua.includes('Dalvik')) finalPlatform = 'Android';
+       else if (ua.includes('iPhone') || ua.includes('iPad') || ua.includes('CFNetwork') || ua.includes('Darwin')) finalPlatform = 'iOS';
+       else if (ua.includes('Windows')) finalPlatform = 'Windows';
+       else if (ua.includes('Macintosh') || ua.includes('Mac OS')) finalPlatform = 'macOS';
+       else if (ua.includes('Linux')) finalPlatform = 'Linux';
+       else finalPlatform = 'Website';
+    }
+
+    if (!finalDeviceModel || finalDeviceModel === 'Unknown Device' || finalDeviceModel === 'Unknown Web Device') {
+        if (ua.includes('Mobile') || ua.includes('Android') || ua.includes('iPhone')) {
+            finalDeviceModel = 'Mobile Device';
+        } else if (ua.includes('Windows NT') || ua.includes('Macintosh') || ua.includes('X11')) {
+            finalDeviceModel = 'Desktop Device';
+        } else {
+            finalDeviceModel = 'Unknown Device';
+        }
+    }
+
+    if (!finalOsVersion || finalOsVersion === 'Unknown OS') {
+        const osMatch = ua.match(/(Android|Windows NT|Mac OS X|CPU OS) ([_.\d]+)/);
+        if (osMatch) {
+            let osName = osMatch[1];
+            let ver = osMatch[2].replace(/_/g, '.');
+            if (osName === 'CPU OS') osName = 'iOS';
+            else if (osName === 'Mac OS X') osName = 'macOS';
+            else if (osName === 'Windows NT') {
+                if (ver === '10.0') { osName = 'Windows'; ver = '10/11'; }
+                else if (ver === '6.3') { osName = 'Windows'; ver = '8.1'; }
+                else if (ver === '6.2') { osName = 'Windows'; ver = '8'; }
+                else if (ver === '6.1') { osName = 'Windows'; ver = '7'; }
+            }
+            finalOsVersion = `${osName} ${ver}`;
+        } else {
+            finalOsVersion = 'Unknown OS';
+        }
     }
 
     let user = null;
@@ -136,9 +169,9 @@ export const verifyLoginController = async (req: Request, res: Response) => {
     const { error: deviceError } = await supabase.from('devices').insert({
       user_id: user.id,
       session_token: sessionToken,
-      device_model: device_model || (finalPlatform === 'Website' ? 'Desktop Device' : 'Mobile Device'),
+      device_model: finalDeviceModel,
       platform: finalPlatform, 
-      os_version: os_version || 'Unknown OS',
+      os_version: finalOsVersion,
       email: user.email,
       username: user.username
     });
