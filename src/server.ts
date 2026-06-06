@@ -2,12 +2,12 @@ import express, { Request, Response } from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-
 import registerRoutes from './routes/auth/register.routes';
 import verifyRoutes from './routes/auth/verify.routes';
 import loginRoutes from './routes/auth/login.routes';
 import deviceRoutes from './routes/auth/device.routes';
 import userRoutes from './routes/auth/user.routes';
+import bannedRoutes from './routes/admin/banned.routes';
 
 dotenv.config();
 
@@ -29,6 +29,7 @@ app.use('/api/auth', verifyRoutes);
 app.use('/api/auth', loginRoutes);
 app.use('/api/auth', deviceRoutes);
 app.use('/api/auth', userRoutes);
+app.use('/api/admin', bannedRoutes);
 
 app.get('/', (req: Request, res: Response) => {
   res.send('Server Express + TypeScript + Supabase berjalan lancar, bro!');

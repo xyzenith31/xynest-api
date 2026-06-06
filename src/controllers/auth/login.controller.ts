@@ -50,6 +50,24 @@ export const requestLoginController = async (req: Request, res: Response) => {
       return res.status(404).json({ error: errorMsg });
     }
 
+    const { data: banRecord } = await supabase
+      .from('banned_users')
+      .select('*')
+      .eq('user_id', user.id)
+      .single();
+
+    if (banRecord) {
+      if (new Date(banRecord.expires_at) > new Date()) {
+        return res.status(403).json({
+          error: 'Akun Anda telah ditangguhkan.',
+          is_banned: true,
+          ban_details: banRecord 
+        });
+      } else {
+        await supabase.from('banned_users').delete().eq('user_id', user.id);
+      }
+    }
+
     const otpCode = generateOTP();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 

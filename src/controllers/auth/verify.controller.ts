@@ -35,7 +35,8 @@ export const verifyRegisterController = async (req: Request, res: Response) => {
         full_name: pending.full_name,
         gender: pending.gender,
         birth_date: pending.birth_date,
-        phone_number: pending.phone_number
+        phone_number: pending.phone_number,
+        role: 'user' 
       })
       .select()
       .single();
