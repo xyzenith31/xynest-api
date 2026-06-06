@@ -87,6 +87,16 @@ export const verifyLoginController = async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'Data login atau kode OTP tidak lengkap.' });
     }
 
+    const ua = req.headers['user-agent'] || '';
+    let finalPlatform = platform;
+    
+    if (!finalPlatform || finalPlatform === 'Unknown Platform') {
+       if (ua.includes('okhttp') || ua.includes('Dalvik') || ua.includes('Android')) finalPlatform = 'Android';
+       else if (ua.includes('CFNetwork') || ua.includes('iPhone') || ua.includes('Darwin')) finalPlatform = 'iOS';
+       else if (ua.includes('Mozilla') || ua.includes('Chrome') || ua.includes('Safari')) finalPlatform = 'Website';
+       else finalPlatform = 'Unknown Platform';
+    }
+
     let user = null;
     if (identifier.includes('@') && !identifier.startsWith('@')) {
       const { data } = await supabase.from('users').select('*').eq('email', identifier).maybeSingle();
@@ -126,8 +136,8 @@ export const verifyLoginController = async (req: Request, res: Response) => {
     const { error: deviceError } = await supabase.from('devices').insert({
       user_id: user.id,
       session_token: sessionToken,
-      device_model: device_model || 'Unknown Device',
-      platform: platform || 'Unknown Platform',
+      device_model: device_model || (finalPlatform === 'Website' ? 'Desktop Device' : 'Mobile Device'),
+      platform: finalPlatform, 
       os_version: os_version || 'Unknown OS',
       email: user.email,
       username: user.username

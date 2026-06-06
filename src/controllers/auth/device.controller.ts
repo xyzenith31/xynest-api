@@ -57,7 +57,6 @@ export const revokeDeviceSession = async (req: Request, res: Response) => {
   try {
     const { deviceId } = req.params;
     const user = (req as any).user;
-
     const { error } = await supabase.from('devices').delete().eq('id', deviceId).eq('user_id', user.id);
 
     if (error) throw error;
@@ -75,6 +74,16 @@ export const authorizeQRLoginController = async (req: Request, res: Response) =>
 
     if (!qr_token) {
       return res.status(400).json({ error: 'QR Token wajib disertakan dari hasil scan.' });
+    }
+
+    const ua = req.headers['user-agent'] || '';
+    let finalPlatform = platform;
+    
+    if (!finalPlatform || finalPlatform === 'Unknown Platform') {
+       if (ua.includes('okhttp') || ua.includes('Dalvik') || ua.includes('Android')) finalPlatform = 'Android';
+       else if (ua.includes('CFNetwork') || ua.includes('iPhone') || ua.includes('Darwin')) finalPlatform = 'iOS';
+       else if (ua.includes('Mozilla') || ua.includes('Chrome') || ua.includes('Safari')) finalPlatform = 'Website';
+       else finalPlatform = 'Website';
     }
 
     const { data: qrData, error: qrError } = await supabase
@@ -96,8 +105,8 @@ export const authorizeQRLoginController = async (req: Request, res: Response) =>
     }
 
     const newDeviceSession = await createDeviceSessionHelper(user, { 
-      device_model: device_model || 'Desktop Login via QR',
-      platform: platform || 'Website',
+      device_model: device_model || (finalPlatform === 'Website' ? 'Desktop Login via QR' : `Mobile Login via QR`),
+      platform: finalPlatform,
       os_version: os_version || 'Unknown'
     });
 
@@ -114,7 +123,7 @@ export const authorizeQRLoginController = async (req: Request, res: Response) =>
 
     return res.status(200).json({
       success: true,
-      message: 'Otorisasi berhasil. Perangkat desktop sekarang sudah terhubung.',
+      message: 'Otorisasi berhasil. Perangkat sekarang sudah terhubung.',
       device_id: newDeviceSession.id 
     });
 
