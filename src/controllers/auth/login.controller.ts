@@ -50,21 +50,29 @@ export const requestLoginController = async (req: Request, res: Response) => {
       return res.status(404).json({ error: errorMsg });
     }
 
-    const { data: banRecord } = await supabase
-      .from('banned_users')
-      .select('*')
-      .eq('user_id', user.id)
-      .single();
+    if (user.status === 'BANNED' || user.status === 'PENDING') {
+      const { data: banRecord } = await supabase
+        .from('banned_users')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
 
-    if (banRecord) {
-      if (new Date(banRecord.expires_at) > new Date()) {
-        return res.status(403).json({
-          error: 'Akun Anda telah ditangguhkan.',
-          is_banned: true,
-          ban_details: banRecord 
-        });
-      } else {
-        await supabase.from('banned_users').delete().eq('user_id', user.id);
+      if (banRecord) {
+        if (new Date(banRecord.expires_at) > new Date()) {
+          const statusMessage = user.status === 'PENDING' 
+            ? 'Akun Anda sedang ditangguhkan dan status banding sedang ditinjau.' 
+            : 'Akun Anda telah ditangguhkan.';
+            
+          return res.status(403).json({
+            error: statusMessage,
+            is_banned: true,
+            status: user.status,
+            ban_details: banRecord 
+          });
+        } else {
+          await supabase.from('users').update({ status: 'ACTIVE' }).eq('id', user.id);
+          await supabase.from('banned_users').delete().eq('user_id', user.id);
+        }
       }
     }
 
