@@ -9,8 +9,6 @@ export const logoutController = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Token sesi tidak ditemukan di server.' });
     }
 
-    console.log("Mencoba menghapus sesi dari Supabase dengan token:", token);
-
     const { data, error } = await supabase
       .from('devices')
       .delete()
@@ -18,7 +16,6 @@ export const logoutController = async (req: Request, res: Response) => {
       .select(); 
 
     if (error) {
-      console.error("Supabase Delete Error:", error);
       return res.status(500).json({ error: 'Gagal menghapus sesi dari database.' });
     }
 
@@ -29,7 +26,6 @@ export const logoutController = async (req: Request, res: Response) => {
     });
 
   } catch (err: any) {
-    console.error("Logout Controller Error:", err);
     return res.status(500).json({ error: err.message || 'Internal Server Error saat mencoba logout.' });
   }
 };
@@ -49,7 +45,6 @@ export const deleteUserController = async (req: Request, res: Response) => {
       .select();
 
     if (error) {
-      console.error("Supabase Delete User Error:", error);
       return res.status(500).json({ error: 'Gagal menghapus akun dari Supabase.' });
     }
 
@@ -61,5 +56,33 @@ export const deleteUserController = async (req: Request, res: Response) => {
 
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Internal Server Error saat menghapus akun.' });
+  }
+};
+
+export const checkStatusController = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+
+    if (!user || !user.id) {
+      return res.status(401).json({ error: 'User tidak valid atau tidak terautentikasi.' });
+    }
+
+    const { data, error } = await supabase
+      .from('users')
+      .select('status, banned_users(reason, expires_at)')
+      .eq('id', user.id)
+      .single();
+
+    if (error || !data) {
+      return res.status(404).json({ error: 'Data pengguna tidak ditemukan.' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      status: data.status,
+      ban_details: data.banned_users
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Internal Server Error saat mengecek status.' });
   }
 };
