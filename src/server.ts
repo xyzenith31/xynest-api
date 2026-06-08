@@ -8,6 +8,7 @@ import loginRoutes from './routes/auth/login.routes';
 import deviceRoutes from './routes/auth/device.routes';
 import userRoutes from './routes/auth/user.routes';
 import bannedRoutes from './routes/admin/banned.routes';
+import donationRoutes from './routes/donation.routes';
 
 dotenv.config();
 
@@ -31,6 +32,7 @@ app.use('/api/auth', loginRoutes);
 app.use('/api/auth', deviceRoutes);
 app.use('/api/auth', userRoutes);
 app.use('/api/admin', bannedRoutes);
+app.use('/api/donation', donationRoutes);
 
 app.get('/', (req: Request, res: Response) => {
   res.send('Server Express + TypeScript + Supabase berjalan lancar, bro!');
