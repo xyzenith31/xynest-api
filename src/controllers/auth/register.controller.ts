@@ -5,8 +5,9 @@ import { getRegisterMailTemplate } from '../../mails/register.mail';
 
 export const registerController = async (req: Request, res: Response) => {
   try {
-    const { email, username, full_name, gender, birth_date, phone_number } = req.body;
-
+    let { email, username, full_name, gender, birth_date, phone_number } = req.body;
+    gender = gender.toUpperCase();
+    const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(full_name)}&background=random`;
     const allowedDomains = ['@gmail.com', '@icloud.com', '@outlook.com', '@hotmail.com', '@yahoo.com', '@xynest.com'];
     const hasAllowedDomain = allowedDomains.some(domain => email.toLowerCase().endsWith(domain));
     
@@ -80,6 +81,7 @@ export const registerController = async (req: Request, res: Response) => {
         birth_date: birthDateObj.toISOString().split('T')[0], 
         phone_number,
         otp_code: otpCode,
+        profiles: avatarUrl,
         expired_at: expiredAt
       }, { onConflict: 'email' });
 
