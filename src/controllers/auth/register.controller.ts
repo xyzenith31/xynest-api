@@ -33,14 +33,15 @@ export const registerController = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Format tanggal lahir harus DD/MM/YYYY (Contoh: 31/05/2007)' });
     }
     const day = parseInt(dateParts[0], 10);
-    const month = parseInt(dateParts[1], 10) - 1; 
+    const month = parseInt(dateParts[1], 10);
     const year = parseInt(dateParts[2], 10);
-    const birthDateObj = new Date(year, month, day);
-
+    const formattedBirthDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const birthDateObj = new Date(formattedBirthDate + 'T00:00:00Z');
     const today = new Date();
-    let age = today.getFullYear() - birthDateObj.getFullYear();
-    const m = today.getMonth() - birthDateObj.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birthDateObj.getDate())) {
+    
+    let age = today.getUTCFullYear() - birthDateObj.getUTCFullYear();
+    const m = today.getUTCMonth() - birthDateObj.getUTCMonth();
+    if (m < 0 || (m === 0 && today.getUTCDate() < birthDateObj.getUTCDate())) {
       age--;
     }
 
@@ -78,7 +79,7 @@ export const registerController = async (req: Request, res: Response) => {
         username,
         full_name,
         gender,
-        birth_date: birthDateObj.toISOString().split('T')[0], 
+        birth_date: formattedBirthDate,
         phone_number,
         otp_code: otpCode,
         profiles: avatarUrl,
