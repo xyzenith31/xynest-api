@@ -12,6 +12,7 @@ import donationRoutes from "./routes/donation.routes";
 import friendRoutes from "./routes/friend.routes";
 import affinityRoutes from "./routes/affinity.routes";
 import familyRoutes from "./routes/family.routes";
+import searchRoutes from "./routes/search.routes";
 
 dotenv.config();
 
@@ -41,6 +42,7 @@ app.use("/api/donation", donationRoutes);
 app.use("/api/friends", friendRoutes);
 app.use("/api/affinities", affinityRoutes);
 app.use("/api/family", familyRoutes);
+app.use("/api/search", searchRoutes);
 
 app.get("/", (req: Request, res: Response) => {
   res.send("Server Express + TypeScript + Supabase berjalan lancar, bro!");

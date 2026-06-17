@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { authMiddleware } from "../middlewares/auth.middleware";
 import {
-  searchFriendsController,
   addFriendController,
   respondFriendRequestController,
   getFriendsListController,
@@ -12,7 +11,6 @@ import {
 
 const router = Router();
 
-router.get("/search", authMiddleware, searchFriendsController);
 router.post("/add", authMiddleware, addFriendController);
 router.post("/respond", authMiddleware, respondFriendRequestController);
 router.get("/list", authMiddleware, getFriendsListController);
