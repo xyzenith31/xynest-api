@@ -10,6 +10,8 @@ import userRoutes from "./routes/auth/user.routes";
 import bannedRoutes from "./routes/admin/banned.routes";
 import donationRoutes from "./routes/donation.routes";
 import friendRoutes from "./routes/friend.routes";
+import affinityRoutes from "./routes/affinity.routes";
+import familyRoutes from "./routes/family.routes";
 
 dotenv.config();
 
@@ -37,6 +39,8 @@ app.use("/api/auth", userRoutes);
 app.use("/api/admin", bannedRoutes);
 app.use("/api/donation", donationRoutes);
 app.use("/api/friends", friendRoutes);
+app.use("/api/affinities", affinityRoutes);
+app.use("/api/family", familyRoutes);
 
 app.get("/", (req: Request, res: Response) => {
   res.send("Server Express + TypeScript + Supabase berjalan lancar, bro!");
